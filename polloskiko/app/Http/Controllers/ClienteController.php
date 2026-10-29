@@ -7,59 +7,63 @@ use Illuminate\Http\Request;
 
 class ClienteController extends Controller
 {
-    /**
-     * Display a listing of the resource.
-     */
-    public function index()
+    private function reglas(): array
     {
-        //
+        return [
+            'nombre'    => ['required', 'string', 'max:80'],
+            'telefono'  => ['required', 'string', 'max:20', 'regex:/^[0-9+\-\s()]+$/'],
+            'direccion' => ['required', 'string', 'max:150'],
+        ];
     }
 
-    /**
-     * Show the form for creating a new resource.
-     */
+    public function index(Request $request)
+    {
+        $buscar = trim((string) $request->query('q', ''));
+
+        $clientes = Cliente::query()
+            ->withCount('ventas')
+            ->withSum('ventas', 'total')
+            ->when($buscar !== '', fn ($q) => $q->where(fn ($q) => $q
+                ->where('nombre', 'like', "%{$buscar}%")
+                ->orWhere('telefono', 'like', "%{$buscar}%")))
+            ->orderBy('nombre')
+            ->get();
+
+        $totalClientes = Cliente::count();
+
+        return view('clientes.index', compact('clientes', 'buscar', 'totalClientes'));
+    }
+
     public function create()
     {
-        //
+        return view('clientes.create');
     }
 
-    /**
-     * Store a newly created resource in storage.
-     */
     public function store(Request $request)
     {
-        //
+        $cliente = Cliente::create($request->validate($this->reglas()));
+
+        return redirect()->route('clientes.index')
+            ->with('exito', "¡Cliente '{$cliente->nombre}' registrado con éxito!");
     }
 
-    /**
-     * Display the specified resource.
-     */
-    public function show(Cliente $cliente)
-    {
-        //
-    }
-
-    /**
-     * Show the form for editing the specified resource.
-     */
     public function edit(Cliente $cliente)
     {
-        //
+        return view('clientes.edit', compact('cliente'));
     }
 
-    /**
-     * Update the specified resource in storage.
-     */
     public function update(Request $request, Cliente $cliente)
     {
-        //
+        $cliente->update($request->validate($this->reglas()));
+
+        return redirect()->route('clientes.index')
+            ->with('exito', "¡Cliente '{$cliente->nombre}' actualizado con éxito!");
     }
 
-    /**
-     * Remove the specified resource from storage.
-     */
     public function destroy(Cliente $cliente)
     {
-        //
+        $cliente->delete();
+
+        return redirect()->route('clientes.index')->with('exito', 'Cliente eliminado.');
     }
 }
