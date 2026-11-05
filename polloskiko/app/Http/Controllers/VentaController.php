@@ -3,17 +3,68 @@
 namespace App\Http\Controllers;
 
 use App\Models\Cliente;
+use App\Models\DetalleVenta;
 use App\Models\Producto;
+use App\Models\User;
 use App\Models\Venta;
 use App\Services\VentaService;
 use Illuminate\Http\Request;
 
 class VentaController extends Controller
 {
-    public function index()
+    public function index(Request $request)
     {
-        $ventas = Venta::with(['cliente', 'user'])->latest()->limit(100)->get();
-        return view('ventas.index', compact('ventas'));
+        $usuario = $request->user();
+        $esAdmin = $usuario->esAdmin();
+
+        $filtros = $request->validate([
+            'desde'   => ['nullable', 'date'],
+            'hasta'   => ['nullable', 'date'],
+            'cliente' => ['nullable', 'string', 'max:10'],
+            'cajero'  => ['nullable', 'integer'],
+        ]);
+
+        $desde = $filtros['desde'] ?? null;
+        $hasta = $filtros['hasta'] ?? null;
+
+        // Si las fechas vienen al revés, se acomodan
+        if ($desde && $hasta && $hasta < $desde) {
+            [$desde, $hasta] = [$hasta, $desde];
+        }
+
+        $cliente = $filtros['cliente'] ?? '';
+        $cajero  = $esAdmin ? ($filtros['cajero'] ?? null) : null;
+
+        // El administrador ve todo; el cajero solo sus ventas
+        $consulta = Venta::query()
+            ->when(! $esAdmin, fn ($q) => $q->where('user_id', $usuario->id))
+            ->when($cajero, fn ($q) => $q->where('user_id', $cajero))
+            ->when($desde, fn ($q) => $q->whereDate('created_at', '>=', $desde))
+            ->when($hasta, fn ($q) => $q->whereDate('created_at', '<=', $hasta))
+            ->when($cliente === 'general', fn ($q) => $q->whereNull('cliente_id'))
+            ->when(ctype_digit($cliente), fn ($q) => $q->where('cliente_id', (int) $cliente));
+
+        // Resumen de TODO lo filtrado (no solo de la página actual)
+        $totalVendido = (float) (clone $consulta)->sum('total');
+        $notas        = (clone $consulta)->count();
+        $unidades     = (int) DetalleVenta::whereIn('venta_id', (clone $consulta)->select('id'))->sum('cantidad');
+        $ticket       = $notas > 0 ? $totalVendido / $notas : 0;
+
+        $ventas = $consulta
+            ->with(['cliente', 'user', 'detalles.producto'])
+            ->latest()
+            ->orderByDesc('id')
+            ->paginate(15)
+            ->withQueryString();
+
+        $clientes   = Cliente::orderBy('nombre')->get(['id', 'nombre']);
+        $cajeros    = $esAdmin ? User::orderBy('name')->get(['id', 'name', 'apellidos']) : collect();
+        $hayFiltros = $desde || $hasta || $cliente !== '' || $cajero;
+
+        return view('ventas.index', compact(
+            'ventas', 'clientes', 'cajeros', 'esAdmin', 'desde', 'hasta', 'cliente', 'cajero',
+            'hayFiltros', 'totalVendido', 'notas', 'unidades', 'ticket'
+        ));
     }
 
     public function create()

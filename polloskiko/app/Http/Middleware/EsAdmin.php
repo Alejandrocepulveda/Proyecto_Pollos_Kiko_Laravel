@@ -8,13 +8,10 @@ use Symfony\Component\HttpFoundation\Response;
 
 class EsAdmin
 {
-    /**
-     * Handle an incoming request.
-     *
-     * @param  Closure(Request): (Response)  $next
-     */
     public function handle(Request $request, Closure $next): Response
     {
+        abort_unless($request->user()?->esAdmin(), 403, 'Solo el administrador puede entrar aquí.');
+
         return $next($request);
     }
 }

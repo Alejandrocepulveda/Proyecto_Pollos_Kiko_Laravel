@@ -10,12 +10,12 @@ use App\Http\Controllers\VentaController;
 use App\Http\Middleware\EsAdmin;
 use Illuminate\Support\Facades\Route;
 
-
 Route::redirect('/', '/login');
 
 Route::middleware('auth')->group(function () {
 
     Route::get('/dashboard', DashboardController::class)->name('dashboard');
+
     Route::patch('productos/{producto}/reponer', [ProductoController::class, 'reponer'])->name('productos.reponer');
     Route::resource('productos', ProductoController::class)->except('show');
     Route::resource('clientes', ClienteController::class)->except('show');
@@ -32,6 +32,7 @@ Route::middleware('auth')->group(function () {
     // Solo administrador
     Route::middleware(EsAdmin::class)->group(function () {
         Route::resource('usuarios', UsuarioController::class)->except(['show', 'destroy']);
+        Route::patch('usuarios/{usuario}/estado', [UsuarioController::class, 'estado'])->name('usuarios.estado');
     });
 
     Route::get('/profile', [ProfileController::class, 'edit'])->name('profile.edit');
