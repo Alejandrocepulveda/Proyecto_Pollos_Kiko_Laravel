@@ -15,7 +15,9 @@ Route::middleware('guest')->group(function () {
     Route::get('register', [RegisteredUserController::class, 'create'])
         ->name('register');
 
-    Route::post('register', [RegisteredUserController::class, 'store']);
+    // Máximo 5 solicitudes de registro cada 10 minutos por IP
+    Route::post('register', [RegisteredUserController::class, 'store'])
+        ->middleware('throttle:5,10');
 
     Route::get('login', [AuthenticatedSessionController::class, 'create'])
         ->name('login');

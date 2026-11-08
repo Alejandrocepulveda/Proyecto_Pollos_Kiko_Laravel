@@ -2,62 +2,79 @@
 
 namespace App\Http\Requests\Auth;
 
+use App\Models\User;
 use Illuminate\Auth\Events\Lockout;
-use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 
 class LoginRequest extends FormRequest
 {
-    /**
-     * Determine if the user is authorized to make this request.
-     */
     public function authorize(): bool
     {
         return true;
     }
 
-    /**
-     * Get the validation rules that apply to the request.
-     *
-     * @return array<string, ValidationRule|array<mixed>|string>
-     */
     public function rules(): array
     {
         return [
-            'email' => ['required', 'string', 'email'],
+            'email'    => ['required', 'string', 'email'],
             'password' => ['required', 'string'],
+            'acceso'   => ['nullable', 'in:admin,cajero'],
         ];
     }
 
     /**
-     * Attempt to authenticate the request's credentials.
-     *
-     * @throws ValidationException
+     * Intenta iniciar sesión. Revisa tres cosas:
+     * 1) que la cuenta esté activa, 2) que las credenciales sean correctas
+     * y 3) que la cuenta coincida con el acceso elegido (Administrador o Cajero).
      */
     public function authenticate(): void
     {
         $this->ensureIsNotRateLimited();
 
-        if (! Auth::attempt($this->only('email', 'password'), $this->boolean('remember'))) {
+        $usuario = User::where('email', (string) $this->input('email'))->first();
+
+        // Cuenta pendiente de aprobación o desactivada.
+        // Solo se avisa si la contraseña es correcta, para no revelar qué correos existen.
+        if ($usuario && ! $usuario->activo
+            && Hash::check((string) $this->input('password'), $usuario->password)) {
             RateLimiter::hit($this->throttleKey());
 
             throw ValidationException::withMessages([
-                'email' => trans('auth.failed'),
+                'email' => 'Tu cuenta está pendiente de aprobación o fue desactivada. Consulta con el administrador.',
+            ]);
+        }
+
+        if (! Auth::attempt($this->only('email', 'password') + ['activo' => true], $this->boolean('remember'))) {
+            RateLimiter::hit($this->throttleKey());
+
+            throw ValidationException::withMessages([
+                'email' => 'Correo o contraseña incorrectos.',
+            ]);
+        }
+
+        // La cuenta debe coincidir con el acceso elegido en la pantalla
+        $esAdmin = Auth::user()->esAdmin();
+        $acceso  = $this->input('acceso');
+
+        if (($acceso === 'admin' && ! $esAdmin) || ($acceso === 'cajero' && $esAdmin)) {
+            Auth::logout();
+            RateLimiter::hit($this->throttleKey());
+
+            throw ValidationException::withMessages([
+                'email' => $acceso === 'admin'
+                    ? 'Esta cuenta no es de Administrador. Elige la opción Cajero.'
+                    : 'Esta cuenta es de Administrador. Elige la opción Administrador.',
             ]);
         }
 
         RateLimiter::clear($this->throttleKey());
     }
 
-    /**
-     * Ensure the login request is not rate limited.
-     *
-     * @throws ValidationException
-     */
     public function ensureIsNotRateLimited(): void
     {
         if (! RateLimiter::tooManyAttempts($this->throttleKey(), 5)) {
@@ -66,21 +83,15 @@ class LoginRequest extends FormRequest
 
         event(new Lockout($this));
 
-        $seconds = RateLimiter::availableIn($this->throttleKey());
+        $segundos = RateLimiter::availableIn($this->throttleKey());
 
         throw ValidationException::withMessages([
-            'email' => trans('auth.throttle', [
-                'seconds' => $seconds,
-                'minutes' => ceil($seconds / 60),
-            ]),
+            'email' => "Demasiados intentos. Vuelve a intentarlo en {$segundos} segundos.",
         ]);
     }
 
-    /**
-     * Get the rate limiting throttle key for the request.
-     */
     public function throttleKey(): string
     {
-        return Str::transliterate(Str::lower($this->string('email')).'|'.$this->ip());
+        return Str::transliterate(Str::lower((string) $this->input('email')) . '|' . $this->ip());
     }
 }

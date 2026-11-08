@@ -3,49 +3,52 @@
 namespace App\Http\Controllers\Auth;
 
 use App\Http\Controllers\Controller;
+use App\Models\Role;
 use App\Models\User;
-use Illuminate\Auth\Events\Registered;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Auth;
-use Illuminate\Support\Facades\Hash;
-use Illuminate\Validation\Rules;
-use Illuminate\Validation\ValidationException;
+use Illuminate\Validation\Rules\Password;
 use Illuminate\View\View;
 
 class RegisteredUserController extends Controller
 {
-    /**
-     * Display the registration view.
-     */
+    /** La pantalla de registro es la misma del login, con la pestaña "Solicitar acceso" abierta. */
     public function create(): View
     {
-        return view('auth.register');
+        return view('auth.login', ['tab' => 'registro']);
     }
 
     /**
-     * Handle an incoming registration request.
-     *
-     * @throws ValidationException
+     * Registra una SOLICITUD de acceso: la cuenta se crea siempre como Cajero
+     * y queda inactiva hasta que un administrador la apruebe.
      */
     public function store(Request $request): RedirectResponse
     {
-        $request->validate([
-            'name' => ['required', 'string', 'max:255'],
-            'email' => ['required', 'string', 'lowercase', 'email', 'max:255', 'unique:'.User::class],
-            'password' => ['required', 'confirmed', Rules\Password::defaults()],
+        $datos = $request->validate([
+            'name'      => ['required', 'string', 'max:100'],
+            'apellidos' => ['required', 'string', 'max:100'],
+            'domicilio' => ['required', 'string', 'max:150'],
+            'telefono'  => ['required', 'string', 'max:20', 'regex:/^[0-9+\-\s()]+$/'],
+            'email'     => ['required', 'email', 'max:255', 'unique:users,email'],
+            'password'  => ['required', 'confirmed', Password::min(8)->letters()->numbers()],
+        ], [
+            'email.unique'       => 'Ese correo ya está registrado.',
+            'telefono.regex'     => 'El teléfono solo puede llevar números, espacios, +, - y paréntesis.',
+            'password.confirmed' => 'Las contraseñas no coinciden.',
         ]);
 
-        $user = User::create([
-            'name' => $request->name,
-            'email' => $request->email,
-            'password' => Hash::make($request->password),
+        User::create([
+            'name'      => $datos['name'],
+            'apellidos' => $datos['apellidos'],
+            'domicilio' => $datos['domicilio'],
+            'telefono'  => $datos['telefono'],
+            'email'     => $datos['email'],
+            'password'  => $datos['password'],
+            'role_id'   => Role::where('nombre', 'Cajero')->value('id') ?? 2, // nunca administrador
+            'activo'    => false,                                               // espera aprobación
         ]);
 
-        event(new Registered($user));
-
-        Auth::login($user);
-
-        return redirect(route('dashboard', absolute: false));
+        return redirect()->route('login')
+            ->with('status', 'Solicitud enviada. Un administrador debe aprobar tu cuenta antes de que puedas entrar.');
     }
 }
