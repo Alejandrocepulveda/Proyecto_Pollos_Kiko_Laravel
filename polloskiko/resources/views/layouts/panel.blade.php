@@ -34,6 +34,7 @@
         .k-item { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border-radius: 12px; font-weight: bold; color: var(--k-texto); transition: background .15s; }
         .k-item:hover { background: var(--k-tarjeta); }
         .k-item.activo { background: var(--k-secundario); box-shadow: 0 3px 0 var(--k-sombra-sec); }
+        .k-nbadge { margin-left: auto; background: var(--k-malo); color: #fff; border-radius: 999px; padding: 1px 9px; font-size: 12px; font-weight: 900; }
         .k-sticker { border: 4px solid #fff; border-radius: 18px; transform: rotate(-3deg); box-shadow: 0 4px 10px rgba(0, 0, 0, .25); }
 
         .k-barra { background: var(--k-tarjeta); border-bottom: 3px solid var(--k-borde); }
@@ -67,17 +68,31 @@
 <body x-data="{ abierto: false }">
 
 @php
+    $esAdmin = auth()->user()->esAdmin();
+
+    // Cada opción: [texto, enlace, ¿está activa?, icono, número rojo (0 = sin número)]
     $menu = [
-        ['Panel',       route('dashboard'),         request()->routeIs('dashboard'),     '🏠'],
-        ['Nueva venta', route('ventas.create'),     request()->routeIs('ventas.create'), '💰'],
-        ['Historial',   route('ventas.index'),      request()->routeIs('ventas.index'),  '🧾'],
-        ['Inventario',  route('productos.index'),   request()->routeIs('productos.*'),   '📦'],
-        ['Clientes',    route('clientes.index'),    request()->routeIs('clientes.*'),    '🐔'],
-        ['Proveedores', route('proveedores.index'), request()->routeIs('proveedores.*'), '🚚'],
+        ['Panel',       route('dashboard'),     request()->routeIs('dashboard'),     '🏠', 0],
+        ['Nueva venta', route('ventas.create'), request()->routeIs('ventas.create'), '💰', 0],
+        [$esAdmin ? 'Historial' : 'Mis ventas', route('ventas.index'), request()->routeIs('ventas.index'), '🧾', 0],
     ];
-    if (auth()->user()->esAdmin()) {
-        $menu[] = ['Usuarios', route('usuarios.index'), request()->routeIs('usuarios.*'), '👤'];
+
+    if ($esAdmin) {
+        try {
+            $pendientes = \App\Models\AvisoStock::whereNull('atendido_at')->count();
+        } catch (\Throwable $e) {
+            $pendientes = 0; // la tabla aún no existe (falta ejecutar php artisan migrate)
+        }
+
+        $menu[] = ['Inventario',      route('productos.index'),   request()->routeIs('productos.*'),   '📦', 0];
+        $menu[] = ['Clientes',        route('clientes.index'),    request()->routeIs('clientes.*'),    '👥', 0];
+        $menu[] = ['Proveedores',     route('proveedores.index'), request()->routeIs('proveedores.*'), '🚚', 0];
+        $menu[] = ['Avisos de stock', route('avisos.index'),      request()->routeIs('avisos.index'),  '🔔', $pendientes];
+        $menu[] = ['Usuarios',        route('usuarios.index'),    request()->routeIs('usuarios.*'),    '🔑', 0];
+    } else {
+        $menu[] = ['Avisar faltante', route('avisos.create'), request()->routeIs('avisos.create'), '🔔', 0];
     }
+
     $hayLogo = file_exists(public_path('img/logo.jpeg'));
 @endphp
 
@@ -96,10 +111,13 @@
         </div>
 
         <nav class="flex-1 space-y-1 overflow-y-auto p-4">
-            @foreach ($menu as [$etiqueta, $url, $activo, $icono])
+            @foreach ($menu as [$etiqueta, $url, $activo, $icono, $numero])
                 <a href="{{ $url }}" class="k-item {{ $activo ? 'activo' : '' }}">
                     <span class="text-lg">{{ $icono }}</span>
                     {{ $etiqueta }}
+                    @if ($numero > 0)
+                        <span class="k-nbadge">{{ $numero }}</span>
+                    @endif
                 </a>
             @endforeach
         </nav>

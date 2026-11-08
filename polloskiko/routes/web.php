@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\AvisoStockController;
 use App\Http\Controllers\ClienteController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\ProductoController;
@@ -14,23 +15,31 @@ Route::redirect('/', '/login');
 
 Route::middleware('auth')->group(function () {
 
+    // ===== Administrador y cajero =====
     Route::get('/dashboard', DashboardController::class)->name('dashboard');
 
-    Route::patch('productos/{producto}/reponer', [ProductoController::class, 'reponer'])->name('productos.reponer');
-    Route::resource('productos', ProductoController::class)->except('show');
-    Route::resource('clientes', ClienteController::class)->except('show');
-    Route::resource('proveedores', ProveedorController::class)
-        ->parameters(['proveedores' => 'proveedor'])
-        ->except('show');
-
-    // Ventas
+    // Ventas (el cajero solo ve y abre las suyas; se controla dentro del controlador)
     Route::get('ventas', [VentaController::class, 'index'])->name('ventas.index');
     Route::get('ventas/nueva', [VentaController::class, 'create'])->name('ventas.create');
     Route::post('ventas', [VentaController::class, 'store'])->name('ventas.store');
     Route::get('ventas/{venta}/nota', [VentaController::class, 'nota'])->name('ventas.nota');
 
-    // Solo administrador
+    // Aviso de producto por agotarse
+    Route::get('avisos/nuevo', [AvisoStockController::class, 'create'])->name('avisos.create');
+    Route::post('avisos', [AvisoStockController::class, 'store'])->name('avisos.store');
+
+    // ===== Solo administrador =====
     Route::middleware(EsAdmin::class)->group(function () {
+        Route::patch('productos/{producto}/reponer', [ProductoController::class, 'reponer'])->name('productos.reponer');
+        Route::resource('productos', ProductoController::class)->except('show');
+        Route::resource('clientes', ClienteController::class)->except('show');
+        Route::resource('proveedores', ProveedorController::class)
+            ->parameters(['proveedores' => 'proveedor'])
+            ->except('show');
+
+        Route::get('avisos', [AvisoStockController::class, 'index'])->name('avisos.index');
+        Route::patch('avisos/{aviso}/atender', [AvisoStockController::class, 'atender'])->name('avisos.atender');
+
         Route::resource('usuarios', UsuarioController::class)->except(['show', 'destroy']);
         Route::patch('usuarios/{usuario}/estado', [UsuarioController::class, 'estado'])->name('usuarios.estado');
     });
